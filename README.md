@@ -1,60 +1,117 @@
-# walkforward-pairs: walk-forward pairs trading with honest evaluation
+# walkforward-pairs
 
-A research framework that finds statistically related US stocks, trades their mean-reverting
-spread, and evaluates the result the way a quant researcher would: out-of-sample only,
-with realistic costs, and with uncertainty on every headline number.
+A research-grade equity pairs trading framework built around honest walk-forward evaluation,
+realistic transaction costs, and statistical discipline.
 
-The point of the project is not a big backtest number. It is the methodology: every step is
-designed so the result cannot be flattered by look-ahead bias, multiple-testing luck, or free trading.
+The purpose of this project is not to produce a flashy backtest number. It is to implement a
+methodology that stays robust to look-ahead bias, multiple-testing error, and over-optimistic
+execution assumptions.
 
-## How it works
+## Overview
 
-1. **Walk-forward windows.** Pairs are selected on 252 days of history, then traded on the *next* 63
-days, then everything is re-selected. Every reported return is out-of-sample.
-2. **Pair selection.** Within-sector pairs only. Engle-Granger cointegration test in both directions
-   (p-value doubled for the direction choice), then **Benjamini-Hochberg false-discovery-rate control**
-   across all pairs tested in the window, then a half-life filter on the spread (2 to 40 days).
-3. **Signal.** The spread `log(y) - beta * log(x)` is z-scored with the *formation-window* mean and
-   std. Enter at |z| >= 2, exit at |z| <= 0.5, stop out at |z| >= 4 and stay flat until the
-   spread re-enters the exit band.
-4. **Execution.** A signal at close *t* is traded at the next close (`exec_lag=1`). Positions are
-   dollar-neutral. Costs: 5 bps per side, 50 bps annualised borrow on the short leg, forced
-   flatten at the end of each window.
-5. **Evaluation.** Sharpe with a block-bootstrap confidence interval, Probabilistic Sharpe Ratio
-   (adjusts for skew and fat tails), regression on SPY (is it really market-neutral?), and a
-   sensitivity grid of net Sharpe against entry threshold and trading costs.
+This project:
 
-## Run it
+- finds cointegrated stock pairs using a walk-forward setup
+- trades the spread with a mean-reversion signal
+- enforces out-of-sample evaluation only
+- accounts for trading frictions and borrow costs
+- reports uncertainty around key performance metrics
+- includes deterministic tests that do not rely on live market data
+
+## Methodology
+
+1. **Walk-forward windows**
+   - Pairs are selected on a formation window and traded on the next evaluation window.
+   - Every reported return is out-of-sample by design.
+
+2. **Pair selection**
+   - Restricts candidate pairs to within-sector names.
+   - Uses Engle-Granger cointegration testing in both directions.
+   - Applies Benjamini-Hochberg FDR control across the candidate set.
+   - Filters by spread half-life to keep the signal economically sensible.
+
+3. **Trading signal**
+   - Forms the spread as `log(y) - beta * log(x)`.
+   - Standardizes the spread using the formation-window mean and standard deviation.
+   - Enters on `|z| >= 2`, exits on `|z| <= 0.5`, and stops out on `|z| >= 4`.
+
+4. **Execution**
+   - Trades at the next close (`exec_lag=1`).
+   - Uses dollar-neutral positions.
+   - Includes cost assumptions for per-side spread, short borrow, and forced flattening of positions.
+
+5. **Evaluation**
+   - Reports Sharpe ratio with block-bootstrap confidence intervals.
+   - Computes the Probabilistic Sharpe Ratio.
+   - Regresses returns against SPY to assess market neutrality.
+   - Sweeps entry thresholds and cost assumptions to show sensitivity.
+
+## Project structure
+
+```text
+.
+├── README.md
+├── requirements.txt
+├── pytest.ini
+├── run_backtest.py
+├── conftest.py
+├── alphalab/
+│   ├── __init__.py
+│   ├── backtest.py
+│   ├── data.py
+│   ├── metrics.py
+│   ├── pairs.py
+│   ├── report.py
+│   ├── strategy.py
+│   └── ...
+├── tests/
+│   ├── helpers.py
+│   └── test_core.py
+└── results/
+    └── generated after running the backtest
+```
+
+## Installation
 
 ```bash
 pip install -r requirements.txt
-pytest                                  # 9 tests, no network needed
-python run_backtest.py --synthetic      # offline smoke test on simulated data
+```
+
+## Quick start
+
+```bash
+pytest
+python run_backtest.py --synthetic
 python run_backtest.py --start 2012-01-01
 ```
 
-The real run downloads prices from Yahoo Finance and takes a few minutes, mostly the cointegration
-tests. It writes `results/RESULTS.md`, `equity_curve.png`, `sensitivity.png`, `pair_log.csv` and
-`summary.json`, all generated from the run.
+The real backtest downloads price data from Yahoo Finance and writes result artifacts such as:
 
-## What the tests prove
+- `results/RESULTS.md`
+- `equity_curve.png`
+- `sensitivity.png`
+- `pair_log.csv`
+- `summary.json`
 
-- **No look-ahead:** randomly shocking all prices after a cut-off date leaves every return before
-the cut-off byte-for-byte unchanged.
-- Selection recovers planted cointegrated pairs and rejects unrelated random walks.
-- Half-life estimator recovers a known AR(1); Benjamini-Hochberg matches a textbook example.
-- Higher costs never increase profit; the strategy profits on planted cointegration before costs.
+## What the tests validate
 
-## Limitations (read these before trusting any number)
+- no look-ahead leakage in the evaluation pipeline
+- recovery of planted cointegrated pairs in simulated data
+- half-life estimation behavior in a known AR(1) structure
+- FDR behavior against textbook examples
+- cost sensitivity that does not reward unrealistic assumptions
 
-- **Survivorship bias:** the universe is today's large caps, which flatters historical results.
-- Adjusted close prices only: no bid/ask spreads, market impact, or short-availability data. The
-  cost model is an assumption, which is why the sensitivity grid sweeps it.
-- Stats for each pair are fixed from the formation window; a regime change inside the trading
-  window is only caught by the stop-loss.
-- Statistical arbitrage on liquid US equities is heavily competed away. A weak or negative
-  result is plausible and is reported as is.
+## Important limitations
+
+- Survivorship bias is present because the universe is based on current large-cap names.
+- The model uses adjusted close prices and a simplified cost framework.
+- Regime shifts inside the trading window are only partially visible via stop-loss logic.
+- Statistical arbitrage is heavily competed away, so weak or negative results are not uncommon.
+
+## License
+
+This project is provided for research and educational use.
 
 ## Results
 
-See `results/RESULTS.md` after running.
+Run the project to generate the latest evaluation artifacts in the `results/` folder.
